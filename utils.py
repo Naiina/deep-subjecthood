@@ -245,10 +245,19 @@ def get_bert_outputs(hdf5_path, bert_ids, bert_model):
     with torch.no_grad():
         print(f"Running {len(bert_ids)} sentences through BERT. This takes a while")
         for idx, sentence in enumerate(tqdm(bert_ids)):
-            encoded_layers, _, hidden_layers = \
-                bert_model(torch.tensor(sentence).unsqueeze(0))
+            tok = torch.tensor(sentence).unsqueeze(0)
+            encoded_layers, _, hidden_layers = bert_model(tok)
+            tokenizer = BertTokenizer.from_pretrained('bert-base-multilingual-cased')
+            i = tokenizer("This is a test", return_tensors="pt")
+            out = bert_model(**i)
+            print("out",len(out),out)
+            
+            print(type(i), i.size())
+            print(type(tok), tok.size())
+            exit()
             outputs.append(np.vstack([np.array(x) for x in hidden_layers]))
-
+            print(hidden_layers)
+            #exit()
             layer_count = len(hidden_layers)
             _, sentence_length, dim = hidden_layers[0].shape
             if save_to_file:
@@ -280,13 +289,16 @@ def train_classifier(train_dataset, epochs=20):
     for epoch in range(epochs):
         losses = []
         for emb_batch, role_label_batch, _ in dataloader:
+            print("emb_batch",type(emb_batch), emb_batch)
             output = classifier(emb_batch)
+            print("role_label_batch",type(role_label_batch), role_label_batch)
             loss = criterion(output, role_label_batch)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
             losses.append(loss.data.mean().item())
         print('[%d/%d] Train loss: %.3f' % (epoch+1, epochs, np.mean(losses)))
+        exit()
     return classifier
 
 # Evaluates `classifier`, returning a dict of {role : acc}.

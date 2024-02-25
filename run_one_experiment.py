@@ -13,7 +13,9 @@ from transformers import BertTokenizer, BertModel
 
 from utils import train_classifier, eval_classifier, eval_classifier_ood
 import data
-import reporter
+#import reporter
+
+
 
 # The size to cap the training data. Size is measured in cased nouns.
 # We chose the number of cased nouns in Basque as our limit.
@@ -29,6 +31,8 @@ def run_experiment(args):
     model = BertModel.from_pretrained('bert-base-multilingual-cased',
                                      output_hidden_states=True)
     model.eval()
+
+    
     num_layers = model.config.num_hidden_layers
 
     training_sent_roles = ["A", "O"] if args.only_ao else ["A", "S", "O"]
@@ -57,6 +61,7 @@ def run_experiment(args):
         training_data_limit = BASQUE_CASED_NOUNS 
 
     has_trained_classifiers = all([os.path.exists(path) for path in classifier_paths])
+    
     if has_trained_classifiers:
         print("Classifiers already trained!")
 
