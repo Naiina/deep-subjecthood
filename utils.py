@@ -8,7 +8,7 @@ from tqdm import tqdm
 import torch.nn as nn
 import numpy as np
 import torch.optim as optim
-import h5py
+#import h5py
 
 import sys
 sys.path.insert(0, "../")
@@ -222,6 +222,7 @@ def get_bert_outputs(hdf5_path, bert_ids, bert_model):
 
     save_to_file = (hdf5_path is not None)
     outputs = []
+    """
     if save_to_file:
         print(f"Bert vectors file is {hdf5_path}")
         if os.path.exists(hdf5_path):
@@ -241,6 +242,7 @@ def get_bert_outputs(hdf5_path, bert_ids, bert_model):
 
     #loading from disk didn't work, for whatever reason
     if save_to_file: datafile = h5py.File(hdf5_path, 'w')
+    """
 
     with torch.no_grad():
         print(f"Running {len(bert_ids)} sentences through BERT. This takes a while")
@@ -285,6 +287,7 @@ def train_classifier(train_dataset, epochs=20):
     criterion = nn.CrossEntropyLoss()
 
     dataloader = train_dataset.get_dataloader()
+    #print(train_dataset.get_num_labels())
 
     for epoch in range(epochs):
         losses = []

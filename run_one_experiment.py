@@ -27,13 +27,17 @@ TEST_DATA_LIMIT = 2000
 
 def run_experiment(args):
     train_tb_name = os.path.split(args.train_lang_base_path)[1]
-    tokenizer = BertTokenizer.from_pretrained('bert-base-multilingual-cased')
-    model = BertModel.from_pretrained('bert-base-multilingual-cased',
-                                     output_hidden_states=True)
-    model.eval()
+    #tokenizer = BertTokenizer.from_pretrained('bert-base-multilingual-cased')
+    #model = BertModel.from_pretrained('bert-base-multilingual-cased',
+    #                                 output_hidden_states=True)
+    #model.eval()
 
     
-    num_layers = model.config.num_hidden_layers
+    #num_layers = model.config.num_hidden_layers
+    model = None
+    tokenizer = None
+    num_layers = 12
+
 
     training_sent_roles = ["A", "O"] if args.only_ao else ["A", "S", "O"]
     role_code = "".join(training_sent_roles).lower()
@@ -42,10 +46,10 @@ def run_experiment(args):
     elif args.all_major_cases: training_case_set = ['Nom', 'Acc', 'Erg', 'Abs']
     else: training_case_set = None
 
-    if args.balance:
-        classifier_paths = [os.path.join("classifiers", f"aso_{train_tb_name}_{args.seed}_{role_code}_balanced_{layer}_exproles") for layer in range(num_layers + 1)]
-    else:
-        classifier_paths = [os.path.join("classifiers", f"aso_{train_tb_name}_{args.seed}_{role_code}_{layer}_exproles") for layer in range(num_layers + 1)]
+    #if args.balance:
+    classifier_paths = [os.path.join("classifiers", f"aso_{train_tb_name}_{args.seed}_{role_code}_balanced_{layer}_exproles") for layer in range(num_layers + 1)]
+    #else:
+    #    classifier_paths = [os.path.join("classifiers", f"aso_{train_tb_name}_{args.seed}_{role_code}_{layer}_exproles") for layer in range(num_layers + 1)]
     if training_case_set is not None:
         classifier_paths = [path + "_" + ''.join(training_case_set) for path in classifier_paths]
     if args.average_embs:
@@ -112,7 +116,8 @@ def train_classifiers(args, classifier_paths, model, tokenizer, training_data_li
         print("Too small! Exiting")
         sys.exit()
     src_test = data.CaseDataset(args.train_lang_base_path + "-test.conllu", model, tokenizer, limit=TEST_DATA_LIMIT, case_set=training_case_set, average=average)
-    num_layers = model.config.num_hidden_layers
+    #num_layers = model.config.num_hidden_layers
+    num_layers = 12
     for layer in reversed(range(num_layers+1)):
         classifier_path = classifier_paths[layer]
         if os.path.exists(classifier_path):
@@ -120,6 +125,7 @@ def train_classifiers(args, classifier_paths, model, tokenizer, training_data_li
         train_dataset = data.CaseLayerDataset(src_train, layer_num=layer)
         print("train dataset labeldict", train_dataset.labeldict)
         print("Training on", len(train_dataset), "data points.")
+        
         classifier = train_classifier(train_dataset)
         print("Trained a case classifier!")
         src_test_dataset = data.CaseLayerDataset(src_test, layer_num=layer, labeldict=train_dataset.labeldict)
