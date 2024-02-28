@@ -47,8 +47,7 @@ def zip2(*iterables, strict=True):
             msg = f"zip() argument {i+1} is longer than argument{plural}{i}"
             raise ValueError(msg)
 
-def get_tokens_and_labels(filename, limit=-1, case_set=None,
-                          role_set=["A","O"], balanced=False, only_pronouns=False):
+def get_tokens_and_labels(filename):
     """
     From the conll file, get three lists of lists and an int:
     - tokens: each list in tokens is a list of words in the sentence.
@@ -69,6 +68,7 @@ def get_tokens_and_labels(filename, limit=-1, case_set=None,
     case_set: What cases to count as cases
     role_set: Which ASO roles to count.
     """
+    """
     with open(filename) as f:
         conll_data = f.read()
     sentences = conllu.parse(conll_data)
@@ -79,13 +79,8 @@ def get_tokens_and_labels(filename, limit=-1, case_set=None,
     word_forms_list = []
     animacy_labels = []
     relevant_examples_index = []
-    if balanced:
-        assert role_set is not None, "Must provide which roles to balance if we're balancing!"
-    # Closed set of possibilities if balanced, open otherwise
-    if balanced:
-        role_example_counts = dict([(role, 0) for role in role_set])
-    else:
-        role_example_counts = Counter()
+    
+    role_example_counts = Counter()
     num_nouns = 0
     num_relevant_examples = 0
     for sent_i, tokenlist in enumerate(sentences):
@@ -134,6 +129,11 @@ def get_tokens_and_labels(filename, limit=-1, case_set=None,
     print("Counts of each role", role_example_counts)
     print("Case counts per role", cases_per_role)
     return tokens, case_labels, role_labels, word_forms_list, animacy_labels, num_relevant_examples, relevant_examples_index, cases_per_role
+    """
+    l_tokens = [["the","cat","ate","the","mouse"],["I","am","green"]]
+    l_labels = [[0,1,0,0,0],[1,0,0]]
+    
+    return l_tokens,l_labels
 
 def get_token_info(token, tokenlist):
     token_role = None
@@ -184,7 +184,7 @@ def get_token_info(token, tokenlist):
         token_role += "-aux"
     return token_role, token_forms
 
-def get_bert_tokens(orig_tokens, tokenizer):
+def get_bert_tokens(orig_tokens, tokenizer,load_bert):
     """
     Given a list of sentences, return a list of those sentences in BERT tokens,
     and a list mapping between the indices of each sentence, where
@@ -192,35 +192,41 @@ def get_bert_tokens(orig_tokens, tokenizer):
     start of the word in sentence_list[i][j]
     The input orig_tokens should be a list of lists, where each element is a word.
     """
+
+    
     bert_tokens = []
     orig_to_bert_map = []
     bert_to_orig_map = []
-    for i, sentence in enumerate(orig_tokens):
-        sentence_bert_tokens = []
-        sentence_map_otb = []
-        sentence_map_bto = []
-        sentence_bert_tokens.append("[CLS]")
-        for orig_idx, orig_token in enumerate(sentence):
-            sentence_map_otb.append(len(sentence_bert_tokens))
-            tokenized = tokenizer.tokenize(orig_token)
-            for bert_token in tokenized:
-                sentence_map_bto.append(orig_idx)
-            sentence_bert_tokens.extend(tokenizer.tokenize(orig_token))
-        sentence_bert_tokens = sentence_bert_tokens[:511]
-        sentence_bert_tokens.append("[SEP]")
-        bert_tokens.append(sentence_bert_tokens)
-        orig_to_bert_map.append(sentence_map_otb)
-        bert_to_orig_map.append(sentence_map_bto)
-    bert_ids = [tokenizer.convert_tokens_to_ids(b) for b in bert_tokens]
+    bert_ids = []
+    if load_bert:
+        for i, sentence in enumerate(orig_tokens):
+            sentence_bert_tokens = []
+            sentence_map_otb = []
+            sentence_map_bto = []
+            sentence_bert_tokens.append("[CLS]")
+            for orig_idx, orig_token in enumerate(sentence):
+                sentence_map_otb.append(len(sentence_bert_tokens))
+                tokenized = tokenizer.tokenize(orig_token)
+                for bert_token in tokenized:
+                    sentence_map_bto.append(orig_idx)
+                sentence_bert_tokens.extend(tokenizer.tokenize(orig_token))
+            sentence_bert_tokens = sentence_bert_tokens[:511]
+            sentence_bert_tokens.append("[SEP]")
+            bert_tokens.append(sentence_bert_tokens)
+            orig_to_bert_map.append(sentence_map_otb)
+            bert_to_orig_map.append(sentence_map_bto)
+        bert_ids = [tokenizer.convert_tokens_to_ids(b) for b in bert_tokens]
+    
     return bert_tokens, bert_ids, orig_to_bert_map, bert_to_orig_map
+        
 
-def get_bert_outputs(hdf5_path, bert_ids, bert_model):
+def get_bert_outputs( bert_ids, bert_model):
     """
     Given a list of lists of bert IDs, runs them through BERT.
     Cache the results to hdf5_path, and load them from there if available.
     """
 
-    save_to_file = (hdf5_path is not None)
+    #save_to_file = (hdf5_path is not None)
     outputs = []
     """
     if save_to_file:
@@ -248,25 +254,27 @@ def get_bert_outputs(hdf5_path, bert_ids, bert_model):
         print(f"Running {len(bert_ids)} sentences through BERT. This takes a while")
         for idx, sentence in enumerate(tqdm(bert_ids)):
             tok = torch.tensor(sentence).unsqueeze(0)
-            encoded_layers, _, hidden_layers = bert_model(tok)
-            tokenizer = BertTokenizer.from_pretrained('bert-base-multilingual-cased')
-            i = tokenizer("This is a test", return_tensors="pt")
-            out = bert_model(**i)
-            print("out",len(out),out)
+            out = bert_model(**tok)
+            hidden_layers = out[2]
+            #tokenizer = BertTokenizer.from_pretrained('bert-base-multilingual-cased')
+            #i = tokenizer("This is a test", return_tensors="pt")
+            #out = bert_model(**i)
+            #print("out",len(out),out)
             
-            print(type(i), i.size())
-            print(type(tok), tok.size())
-            exit()
+            #print(type(i), i.size())
+            #print(type(tok), tok.size())
+            
             outputs.append(np.vstack([np.array(x) for x in hidden_layers]))
-            print(hidden_layers)
-            #exit()
+            #print(hidden_layers)
+            """
             layer_count = len(hidden_layers)
             _, sentence_length, dim = hidden_layers[0].shape
             if save_to_file:
                 dset = datafile.create_dataset(str(idx), (layer_count, sentence_length, dim))
                 dset[:, :, :] = np.vstack([np.array(x) for x in hidden_layers])
+            """
 
-    if save_to_file: datafile.close()
+    #if save_to_file: datafile.close()
     return outputs
 
 class _classifier(nn.Module):
@@ -288,14 +296,14 @@ def train_classifier(train_dataset, epochs=20):
 
     dataloader = train_dataset.get_dataloader()
     #print(train_dataset.get_num_labels())
-
+    
     for epoch in range(epochs):
         losses = []
-        for emb_batch, role_label_batch, _ in dataloader:
+        for emb_batch, label_batch in dataloader:
             print("emb_batch",type(emb_batch), emb_batch)
             output = classifier(emb_batch)
-            print("role_label_batch",type(role_label_batch), role_label_batch)
-            loss = criterion(output, role_label_batch)
+            print("abel_batch",type(label_batch), label_batch)
+            loss = criterion(output, label_batch)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -365,7 +373,7 @@ def eval_classifier_ood_list(classifier, emb_list, labelset):
     out = {x : dict(out[x]) for x in out}
     return out
 
-def run_classifier(sentence_list, bert_model, bert_tokenizer, classifier,
+def run_classifier(sentence_list, bert_model, bert_tokenizer, classifier,load_bert,
                    labelset, layer_num=-1):
     """
     Run the classifier on a sentence list. The sentence list does not need to be
@@ -374,8 +382,8 @@ def run_classifier(sentence_list, bert_model, bert_tokenizer, classifier,
     Use the .split(" ") method on a string to achieve that easily.
     """
     bert_tokens, bert_ids, otb_map, bto_map = \
-        get_bert_tokens(sentence_list, bert_tokenizer)
-    bert_outputs = get_bert_outputs(None, bert_ids, bert_model)
+        get_bert_tokens(sentence_list, bert_tokenizer,load_bert)
+    bert_outputs = get_bert_outputs(bert_ids, bert_model)
     for i_s, layers in enumerate(bert_outputs):
         sentence = layers[layer_num].squeeze(0)
         for i_w, word in enumerate(sentence):

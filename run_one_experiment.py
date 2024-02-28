@@ -19,72 +19,62 @@ import data
 
 # The size to cap the training data. Size is measured in cased nouns.
 # We chose the number of cased nouns in Basque as our limit.
-BASQUE_CASED_NOUNS = 13128
-BASQUE_AO_CASED_NOUNS = 4312
-BASQUE_AO_CASED_NOUNS_BALANCED = 2025
-
-TEST_DATA_LIMIT = 2000
-
-def run_experiment(args):
-    train_tb_name = os.path.split(args.train_lang_base_path)[1]
-    #tokenizer = BertTokenizer.from_pretrained('bert-base-multilingual-cased')
-    #model = BertModel.from_pretrained('bert-base-multilingual-cased',
-    #                                 output_hidden_states=True)
-    #model.eval()
-
-    
-    #num_layers = model.config.num_hidden_layers
-    model = None
-    tokenizer = None
-    num_layers = 12
 
 
-    training_sent_roles = ["A", "O"] if args.only_ao else ["A", "S", "O"]
-    role_code = "".join(training_sent_roles).lower()
-    if args.nom_acc: training_case_set = ["Nom", "Acc"]
-    elif args.erg_abs: training_case_set = ["Erg", "Abs"]
-    elif args.all_major_cases: training_case_set = ['Nom', 'Acc', 'Erg', 'Abs']
-    else: training_case_set = None
+train_size = 10
+test_size = 10
 
-    #if args.balance:
-    classifier_paths = [os.path.join("classifiers", f"aso_{train_tb_name}_{args.seed}_{role_code}_balanced_{layer}_exproles") for layer in range(num_layers + 1)]
-    #else:
-    #    classifier_paths = [os.path.join("classifiers", f"aso_{train_tb_name}_{args.seed}_{role_code}_{layer}_exproles") for layer in range(num_layers + 1)]
-    if training_case_set is not None:
-        classifier_paths = [path + "_" + ''.join(training_case_set) for path in classifier_paths]
-    if args.average_embs:
-        classifier_paths = [path + "_average" for path in classifier_paths]
+d_lang = {"fr":"UD_French-PUD"}
 
-    # Set the size of our training set to the number of Basque data points, depending on the type of experiment.
-    if args.only_ao:
-        if args.balance:
-            training_data_limit = BASQUE_AO_CASED_NOUNS_BALANCED 
-        else:
-            training_data_limit = BASQUE_AO_CASED_NOUNS
+model = None
+tokenizer = None
+num_layers = 12
+data_path = "../ud-treebanks-v2.13"   
+reeval_src_test = True
+classifier_path = [0,1,2,3,4,5,6,7,8,9,10,11,12] #classifier_path[i] is path of the classifier of layer i
+lang = "fr"
+dest_path = ""
+load_bert = True
+use_saved_files = False
+
+def run_experiment(d_lang,lang,train_size,test_size,classifier_path,use_saved_files=True,load_bert=True):
+    if load_bert:
+        tokenizer = BertTokenizer.from_pretrained('bert-base-multilingual-cased')
+        model = BertModel.from_pretrained('bert-base-multilingual-cased',
+                                        output_hidden_states=True)
+        model.eval()
+        num_layers = model.config.num_hidden_layers
     else:
-        training_data_limit = BASQUE_CASED_NOUNS 
+        tokenizer = None
+        model = None
+        num_layers = 12
 
-    has_trained_classifiers = all([os.path.exists(path) for path in classifier_paths])
-    
-    if has_trained_classifiers:
+
+    has_trained_classifiers = all([os.path.exists(path) for path in classifier_path])
+    b = has_trained_classifiers and use_saved_files
+
+    if b:
         print("Classifiers already trained!")
 
-    if not has_trained_classifiers:
-        train_classifiers(
-            args, classifier_paths, model, tokenizer, training_data_limit, training_sent_roles, training_case_set, balanced=args.balance, average=args.average_embs)
-    if args.reeval_src_test:
-        print(f"Loading the source test set, with limit {TEST_DATA_LIMIT}")
+    if not b:
+        train_classifiers(d_lang,lang,classifier_path, model, tokenizer, train_size,test_size,use_saved_files, load_bert)
+
+    exit()
+    
+
+    if reeval_src_test:
+        print(f"Loading the source test set, with limit {test_size}")
         src_test = data.CaseDataset(
-            args.train_lang_base_path + "-test.conllu", model, tokenizer,
-            limit=TEST_DATA_LIMIT, case_set=training_case_set, average=args.average_embs)
-    print(f"Loading the dest test set, with limit {TEST_DATA_LIMIT}")
-    dest_test = data.CaseDataset(args.test_lang_fn, model, tokenizer, limit=TEST_DATA_LIMIT, case_set=None, average=args.average_embs)
+            d_lang[lang] +"/"+d_lang[lang].lower() +"-test.conllu", model, tokenizer,
+            load_bert,use_saved_files)
+    print(f"Loading the dest test set, with limit {test_size}")
+    dest_test = data.CaseDataset( dest_path,model, tokenizer, load_bert,use_saved_files)
 
     out_df = pd.DataFrame([])
     # Layers trained in reverse so we can make sure code is working with informative layers early
     for layer in reversed(range(num_layers+1)):
         print("On layer", layer)
-        classifier_path = classifier_paths[layer]
+        classifier_path = classifier_path[layer]
         classifier, labelset, labeldict, src_test_accuracy, training_case_distribution = pickle.load(open(classifier_path, "rb"))
         print(f"Loaded case classifier from {classifier_path}!")
         print("src_test_accuracy:", src_test_accuracy)
@@ -105,36 +95,45 @@ def run_experiment(args):
 
     out_df.to_csv(os.path.join("results", args.output_fn))
 
-def train_classifiers(args, classifier_paths, model, tokenizer, training_data_limit, training_role_set, training_case_set, balanced=False, average=False):
+def train_classifiers(d_lang,lang, classifier_paths, model, tokenizer, train_size,test_size,use_saved_files,load_bert):
     print("Need to train classifiers!")
-    print(f"Loading the source train set, with limit {training_data_limit}")
-    src_train = data.CaseDataset(args.train_lang_base_path + "-train.conllu",
-        model, tokenizer, limit=training_data_limit, case_set=training_case_set, role_set=training_role_set, balanced=balanced, average=average)
-    training_case_distribution = src_train.get_case_distribution()
-    print(f"Length of train set is {len(src_train)}, limit is {training_data_limit}")
-    if len(src_train) < training_data_limit:
-        print("Too small! Exiting")
-        sys.exit()
-    src_test = data.CaseDataset(args.train_lang_base_path + "-test.conllu", model, tokenizer, limit=TEST_DATA_LIMIT, case_set=training_case_set, average=average)
-    #num_layers = model.config.num_hidden_layers
-    num_layers = 12
+    print(f"Loading the source train set, with limit {train_size}")
+    path = d_lang[lang] +"/"+d_lang[lang].lower()
+    src_train = data.CaseDataset( path+ "-train.conllu",
+        model, tokenizer, load_bert,use_saved_files)
+    
+    #training_case_distribution = src_train.get_case_distribution() #to see
+    print(f"Length of train set is {len(src_train)}, limit is {train_size}")
+    #if len(src_train) < train_size:
+    #    print("Too small! Exiting")
+    #    sys.exit()
+    src_test = data.CaseDataset(path + "-test.conllu", model, tokenizer, load_bert,use_saved_files)
+    if load_bert:
+        num_layers = model.config.num_hidden_layers
+    else:
+        num_layers = 12
+
     for layer in reversed(range(num_layers+1)):
         classifier_path = classifier_paths[layer]
-        if os.path.exists(classifier_path):
+        if use_saved_files and os.path.exists(classifier_path):
             continue
-        train_dataset = data.CaseLayerDataset(src_train, layer_num=layer)
-        print("train dataset labeldict", train_dataset.labeldict)
+        train_dataset = data.CaseLayerDataset(src_train, layer_num=layer) 
+        print("train dataset labeldict", train_dataset.labeldict) 
         print("Training on", len(train_dataset), "data points.")
         
-        classifier = train_classifier(train_dataset)
-        print("Trained a case classifier!")
+        if load_bert:
+            classifier = train_classifier(train_dataset) 
+            print("Trained a case classifier!")
+        exit()
+
         src_test_dataset = data.CaseLayerDataset(src_test, layer_num=layer, labeldict=train_dataset.labeldict)
-        src_test_accuracy = eval_classifier(classifier, src_test_dataset)
+        src_test_accuracy = eval_classifier(classifier, src_test_dataset) 
         print(f"Accuracy on test set of training language: {src_test_accuracy}")
         print(f"Saving classifier to {classifier_path}")
         with open(classifier_path, 'wb') as pkl_file:
             pickle.dump((classifier, train_dataset.get_label_set(), train_dataset.labeldict, src_test_accuracy, training_case_distribution), pkl_file)
 
+"""
 def __main__():
     parser = argparse.ArgumentParser()
     parser.add_argument('--train-lang-base-path', type=str,
@@ -170,7 +169,10 @@ def __main__():
     else:
         print("Not setting random seed")
 
-    run_experiment(args)
+"""
 
-if __name__ == "__main__":
-    __main__()
+run_experiment(d_lang,lang,train_size,test_size,classifier_path,use_saved_files,load_bert)
+
+
+#if __name__ == "__main__":
+#    __main__()
